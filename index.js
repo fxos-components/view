@@ -5,20 +5,20 @@
  * Module Dependencies
  */
 
-var events = require('evt');
-
-/**
- * Locals
- */
-
-var counter = 1;
-var noop = function() {};
+var evt = require('evt');
+var attach = require('attach');
 
 /**
  * Exports
  */
 
 module.exports = View;
+
+/**
+ * Locals
+ */
+
+var counter = 1;
 
 /**
  * Base view class. Accepts
@@ -28,19 +28,27 @@ module.exports = View;
  * @constructor
  */
 function View(options) {
-  options = options || {};
-  this.el = options.el || this.el || document.createElement(this.tag);
-  this.el.id = this.el.id || ('view' + counter++);
-  this.name = options.name || this.name;
-  this.els = {};
+  // Override defaults.
+  mixin(this, options || {});
 
-  if (!this.el.className) {
-    if (this.name) this.el.className = this.name;
-    if (this.className) this.el.className += ' ' + this.className;
-  }
+  // Set up the root element.
+  var el = this.el = this.el || document.createElement(this.tag);
+  el.id = el.id || ('view-' + counter++);
+  if (this.className) { el.classList.add(this.className); }
+  el.classList.add(this.name);
 
+  // Add object for storing child elements.
+  this.els = this.els || {};
+
+  // Ensure all methods are called within
+  // the context of this view.
   bindAll(this);
+
+  // Initialize view.
   this.initialize.apply(this, arguments);
+
+  // Automatically attach event delegates.
+  this.attach(this.events || {});
 }
 
 /**
@@ -49,11 +57,7 @@ function View(options) {
  *
  * @type {Object}
  */
-events(View.prototype);
-
-// Allow for 'emit' or
-// 'fire' to trigger events
-View.prototype.fire = View.prototype.fire || View.prototype.emit;
+evt(View.prototype);
 
 /**
  * Default tagName
@@ -61,7 +65,7 @@ View.prototype.fire = View.prototype.fire || View.prototype.emit;
  * @type {String}
  */
 View.prototype.tag = 'div';
-View.prototype.name = 'noname';
+View.prototype.name = 'view';
 
 /**
  * Appends the root element
@@ -73,7 +77,7 @@ View.prototype.name = 'noname';
 View.prototype.appendTo = function(parent) {
   if (!parent) return this;
   parent.appendChild(this.el);
-  this.fire('inserted');
+  this.emit('inserted');
   return this;
 };
 
@@ -91,7 +95,7 @@ View.prototype.prependTo = function(parent) {
   if (first) parent.insertBefore(this.el, first);
   else this.appendTo(parent);
 
-  this.fire('inserted');
+  this.emit('inserted');
   return this;
 };
 
@@ -100,10 +104,75 @@ View.prototype.prependTo = function(parent) {
  * querySelector.
  *
  * @param  {String} query
- * @return { Element | null}
+ * @return {Element | null}
  */
 View.prototype.find = function(query) {
   return this.el.querySelector(query);
+};
+
+/**
+ * Attaches a DOM event listener for the specified
+ * event name to the root element of the View. An
+ * optional CSS selector can be specified to delegate
+ * the given event handler for specific child elements.
+ *
+ * It can also attach multiple event listeners at once
+ * following the same conventions as Backbone.View:
+ *
+ *   myView.attach({
+ *
+ *     // Attach a 'click' event handler to
+ *     // the root element of the View
+ *     'click': function(evt) {...},
+ *
+ *     // Attach a 'click' event handler to
+ *     // child elements matching the '.button'
+ *     // CSS selector
+ *     'click .button': function(evt) {...},
+ *
+ *     // Attach a 'mouseup' event handler to
+ *     // child elements matching the 'li > a'
+ *     // CSS selector using a named event
+ *     // handler (where `onMouseUp` is defined
+ *     // as a method on the View)
+ *     'mouseup li > a': 'onMouseUp'
+ *   });
+ *
+ * @param  {String|Object} nameOrEvents
+ * @param  {String} selector (optional)
+ * @param  {Function} handler (optional)
+ * @param  {Object} context (optional)
+ */
+View.prototype.attach = function(nameOrEvents, selector, handler) {
+  if (typeof nameOrEvents !== 'object') {
+    attach.on(this.el, nameOrEvents, selector, handler, this);
+    return;
+  }
+
+  // Automatically resolve event handlers
+  // specified by name.
+  for (var key in nameOrEvents) {
+    if (typeof nameOrEvents[key] !== 'function') {
+      nameOrEvents[key] = this[nameOrEvents[key]];
+    }
+  }
+
+  attach.many(this.el, nameOrEvents, this);
+};
+
+/**
+ * Removes a DOM event listener for the specified
+ * event name from the root element of the View. An
+ * optional CSS selector and event handler can also
+ * be specified to remove specific event listeners.
+ * If all arguments are omitted, all event listeners
+ * are removed for the View.
+ *
+ * @param  {String} name (optional)
+ * @param  {String} selector (optional)
+ */
+View.prototype.detach = function(name, selector) {
+  attach.off(this.el, name, selector);
 };
 
 /**
@@ -118,17 +187,42 @@ View.prototype.remove = function(options) {
   var parent = this.el.parentNode;
   if (!parent) return this;
   parent.removeChild(this.el);
-  if (!silent) this.fire('remove');
+  if (!silent) this.emit('remove');
   return this;
 };
 
-View.prototype.set = function(key, value) {
-  value = value === undefined ? '' : value;
-  this.el.setAttribute(toDashed(key), value);
+View.prototype.get = function(key) {
+  key = toDashed(key);
+  return this.el.getAttribute('data-' + key);
 };
 
-View.prototype.get = function(key) {
-  return this.el.getAttribute(key);
+View.prototype.set = function(key, value) {
+  if (typeof key !== 'string') { return; }
+  if (arguments.length === 1) { value = true; }
+  if (!value) { return this.unset(key); }
+
+  key = toDashed(key);
+
+  var oldValue = this.el.getAttribute('data-' + key);
+  var oldClass = oldValue && toClassName(key, oldValue);
+  var newClass = toClassName(key, value);
+  var classList = this.el.classList;
+
+  if (oldClass) { classList.remove(oldClass); }
+  if (newClass) { classList.add(newClass); }
+
+  this.el.setAttribute('data-' + key, value);
+};
+
+View.prototype.unset = function(key) {
+  key = toDashed(key);
+
+  var oldValue = this.el.getAttribute('data-' + key);
+  var oldClass = oldValue && toClassName(key, oldValue);
+
+  if (oldClass) { this.el.classList.remove(oldClass); }
+
+  this.el.removeAttribute('data-' + key);
 };
 
 /**
@@ -163,53 +257,33 @@ View.prototype.setter = function(key, forced) {
   };
 };
 
-View.prototype.enable = function(key, value) {
-  switch(arguments.length) {
-    case 0:
-      value = true;
-      key = 'enabled';
-      break;
-    case 1:
-      if (typeof key === 'boolean') {
-        value = key;
-        key = 'enabled';
-      } else {
-        value = true;
-        key = key ? key + '-enabled' : 'enabled';
-      }
-      break;
-    default:
-      key = key ? key + '-enabled' : 'enabled';
-  }
-  this.set(key, !!value);
+View.prototype.enable = function(key) {
+  this.set(key ? key + '-enabled' : 'enabled');
+  this.unset(key ? key + '-disabled' : 'disabled');
 };
 
 View.prototype.disable = function(key) {
-  this.enable(key, false);
+  this.set(key ? key + '-disabled' : 'disabled');
+  this.unset(key ? key + '-enabled' : 'enabled');
+};
+
+View.prototype.toggle = function(key) {
+  if (this.get(key ? key + '-enabled' : 'enabled')) {
+    return this.disable(key);
+  }
+  this.enable(key);
 };
 
 View.prototype.enabler = function(key) {
-  return (function(value) { this.enable(key, value); }).bind(this);
+  return (function() { this.enable(key); }).bind(this);
 };
 
-View.prototype.hide = function(key) {
-  this.toggle(key, false);
+View.prototype.disabler = function(key) {
+  return (function() { this.disable(key); }).bind(this);
 };
 
-View.prototype.show =  function(key) {
-  this.toggle(key, true);
-};
-
-View.prototype.toggle = function(key, value) {
-  if (arguments.length === 1 && typeof key === 'boolean') {
-    value = key;
-    key = '';
-  } else {
-    key = key ? key + '-' : '';
-  }
-
-  this.el.classList.toggle(key + 'hidden', !value);
-  this.el.classList.toggle(key + 'visible', value);
+View.prototype.toggler = function(key) {
+  return (function() { this.toggle(key); }).bind(this);
 };
 
 /**
@@ -226,17 +300,63 @@ View.prototype.toggle = function(key, value) {
 View.prototype.destroy = function(options) {
   var noRemove = options && options.noRemove;
   if (!noRemove) this.remove();
-  this.fire('destroy');
+  this.detach();
+  this.emit('destroy');
   this.el = null;
 };
 
-View.prototype.toString = function() {
-  return '[object View]';
+/**
+ * Default `initialize` implementation
+ * for simply calling the `render`
+ * method for the View.
+ *
+ * NOTE: Overwrite if needed
+ *
+ * @return {View}
+ */
+View.prototype.initialize = function() {
+  return this.render();
 };
 
-// Overwrite as required
-View.prototype.initialize = noop;
-View.prototype.template = function() { return ''; };
+/**
+ * Default `render` implementation
+ * for simply injecting the contents
+ * of the `template` property of the
+ * View into the View's root element.
+ *
+ * If the `template` property is a
+ * function, it will be called passing
+ * in the arguments passed to this
+ * method and its return value will be
+ * injected into the View's root element.
+ *
+ * NOTE: Overwrite if needed
+ *
+ * @return {View}
+ */
+View.prototype.render = function() {
+  var html = this.template;
+  if (typeof html === 'function') {
+    html = html.apply(this, arguments);
+  }
+
+  this.el.innerHTML = html;
+  return this;
+};
+
+/**
+ * Default `template` implementation
+ * returning an empty HTML string.
+ * for simply calling the `render`
+ * method for the View.
+ *
+ * NOTE: Overwrite if needed
+ *
+ * @return {String}
+ */
+View.prototype.template = function() {
+  return '';
+};
 
 /**
  * Extends the base view
@@ -264,6 +384,59 @@ View.extend = function(props) {
 
   return Child;
 };
+
+/**
+ * Attempts to cast a value to a
+ * boolean. If the value is a string
+ * containing 'true' or 'false', it
+ * will be converted to a boolean.
+ * Otherwise, the value returned will
+ * be the same as the value passed in.
+ *
+ * Examples:
+ *   toBoolean(true); //=> true
+ *   toBoolean(false); //=> false
+ *   toBoolean('true'); //=> true
+ *   toBoolean('false'); //=> false
+ *   toBoolean('foo'); //=> 'foo'
+ *   toBoolean(123); //=> 123
+ *   toBoolean(null); //=> null
+ *   toBoolean(); //=> undefined
+ *
+ * @param  {*} value
+ *
+ * @return {*}
+ */
+function toBoolean(value) {
+  if (typeof value === 'boolean') { return value; }
+  else if (value === 'true') { return true; }
+  else if (value === 'false') { return false; }
+  return value;
+}
+
+/**
+ * Converts a key/value pair to
+ * a CSS class name.
+ *
+ * Examples:
+ *   toClassName('foo', true); //=> 'foo'
+ *   toClassName('foo', false); //=> ''
+ *   toClassName('foo', 'true'); //=> 'foo'
+ *   toClassName('foo', 'false'); //=> ''
+ *   toClassName('foo', 'bar'); //=> 'foo-bar'
+ *   toClassName('foo'); //=> 'foo'
+ *
+ * @param  {String} key
+ * @param  {*} value
+ *
+ * @return {String}
+ */
+function toClassName(key, value) {
+  value = toBoolean(value);
+  if (typeof value === 'boolean') { return value ? key : '' }
+  else if (value) { return key + '-' + value; }
+  else { return key; }
+}
 
 function toDashed(s) {
   return s.replace(/\W+/g, '-')
