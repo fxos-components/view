@@ -1,0 +1,30 @@
+{
+  "name": "view",
+  "homepage": "https://github.com/gaia-components/view",
+  "license": "MIT",
+  "main": "index.js",
+  "directories": {
+    "example": "examples",
+    "test": "test"
+  },
+  "scripts": {
+    "test": "./node_modules/.bin/mocha-phantomjs test/index.html"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/gaia-components/view.git"
+  },
+  "dependencies": {
+    "evt": "gaia-components/evt#v0.4.0",
+    "attach": "gaia-components/attach#v0.1.2"
+  },
+  "devDependencies": {
+    "mocha-phantomjs": "~3.1.5",
+    "chai": "~1.8.0",
+    "sinon": "~1.7.3",
+    "mocha": "~1.13.0"
+  },
+  "bugs": {
+    "url": "https://github.com/gaia-components/view/issues"
+  }
+}

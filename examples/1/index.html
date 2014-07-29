@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1">
+  <meta charset="utf-8">
+  <title>view.js Example</title>
+  <style>
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+    .sub-item {
+      display: none;
+      font-size: 10px;
+    }
+    .sub-item-1-enabled .sub-item-1,
+    .sub-item-2-enabled .sub-item-2,
+    .sub-item-3-enabled .sub-item-3 {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <script src="../../node_modules/evt/index.js"></script>
+  <script src="../../node_modules/attach/index.js"></script>
+  <script src="../../index.js"></script>
+  <script>window.View = view;</script>
+  <script>
+    var MyView = View.extend({
+      name: 'my-view',
+      tag: 'ul',
+
+      events: {
+        'click a': 'onItemClick',
+        'click a > .sub-item': 'onSubItemClick'
+      },
+
+      template: function() {
+        return '<li>' +
+            '<a href="#item1" data-action="sub-item-1">' +
+              'Item 1 ' +
+              '<div class="sub-item sub-item-1">[Sub-Item 1]</div>' +
+            '</a>' +
+          '</li>' +
+          '<li>' +
+            '<a href="#item2" data-action="sub-item-2">' +
+              'Item 2 ' +
+              '<div class="sub-item sub-item-2">[Sub-Item 2]</div>' +
+            '</a>' +
+          '</li>' +
+          '<li>' +
+            '<a href="#item3" data-action="sub-item-3">' +
+              'Item 3 ' +
+              '<div class="sub-item sub-item-3">[Sub-Item 3]</div>' +
+            '</a>' +
+          '</li>';
+      },
+
+      onItemClick: function(evt, el) {
+        this.toggle(el.dataset.action);
+        evt.preventDefault();
+      },
+
+      onSubItemClick: function(evt, el) {
+        alert('Clicked Sub-Item: ' + el.innerHTML);
+        evt.preventDefault();
+        evt.stopPropagation();
+      }
+    });
+
+    var myView = new MyView();
+    myView.appendTo(document.body);
+  </script>
+</body>
+</html>
